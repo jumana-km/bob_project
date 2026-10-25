@@ -1,0 +1,16 @@
+# DevSecOps CI/CD Pipeline Demo – pinned dependencies
+# Python 3.11+ on Windows and Linux
+
+# Web framework
+fastapi==0.115.6
+uvicorn==0.32.1
+starlette==0.41.3
+
+# Testing
+pytest==8.3.4
+httpx==0.28.1
+anyio==4.7.0
+
+# Security scanning
+bandit==1.8.0
+pip-audit==2.7.3
