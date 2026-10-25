@@ -22,6 +22,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 try:
     from fastapi import FastAPI, HTTPException
+    from fastapi.responses import HTMLResponse
     import uvicorn
     FASTAPI_AVAILABLE = True
 except ImportError:  # pragma: no cover
@@ -61,6 +62,192 @@ def _get_db() -> sqlite3.Connection:
 # Build the FastAPI application
 # ---------------------------------------------------------------------------
 
+_FRONTEND_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DevSecOps Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; background: #f0f2f5; color: #1f2328; min-height: 100vh; }
+    header { background: #1f2328; color: #fff; padding: 18px 32px; display: flex; align-items: center; gap: 14px; }
+    header h1 { font-size: 1.2rem; font-weight: 600; }
+    .badge { font-size: 0.7rem; padding: 3px 10px; border-radius: 20px; font-weight: 700; letter-spacing: 0.05em; }
+    .badge-vuln { background: #f87171; color: #fff; }
+    .badge-secure { background: #34d399; color: #1f2328; }
+    main { max-width: 860px; margin: 32px auto; padding: 0 16px 40px; }
+    .info-bar { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; font-size: 0.85rem; color: #856404; }
+    .info-bar.secure { background: #d1fae5; border-color: #34d399; color: #065f46; }
+    h2 { font-size: 1rem; font-weight: 600; color: #57606a; text-transform: uppercase; letter-spacing: 0.06em; margin: 28px 0 12px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    .card-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
+    .card-desc { font-size: 0.82rem; color: #57606a; margin-bottom: 14px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+    label { font-size: 0.8rem; color: #57606a; display: block; margin-bottom: 3px; }
+    input { border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 10px; font-size: 0.88rem; width: 180px; outline: none; }
+    input:focus { border-color: #3b82d4; }
+    button { background: #1f2328; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 0.88rem; cursor: pointer; white-space: nowrap; }
+    button:hover { background: #3b82d4; }
+    .cwe-tag { font-size: 0.72rem; background: #fee2e2; color: #b91c1c; border-radius: 4px; padding: 2px 7px; font-weight: 600; margin-left: 6px; }
+    .secure-tag { font-size: 0.72rem; background: #d1fae5; color: #065f46; border-radius: 4px; padding: 2px 7px; font-weight: 600; margin-left: 6px; }
+    pre { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; font-size: 0.82rem; white-space: pre-wrap; word-break: break-all; min-height: 36px; color: #1f2328; }
+    pre.ok { border-color: #34d399; background: #f0fdf4; }
+    pre.err { border-color: #f87171; background: #fff5f5; }
+    footer { text-align: center; font-size: 0.75rem; color: #57606a; margin-top: 40px; border-top: 1px solid #e5e7eb; padding-top: 16px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>DevSecOps Demo App</h1>
+  <span class="badge {BADGE_CLASS}">{MODE_LABEL}</span>
+</header>
+<main>
+  <div class="info-bar {INFO_CLASS}">
+    {INFO_MSG}
+  </div>
+
+  <h2>Endpoints</h2>
+
+  <!-- GET / -->
+  <div class="card">
+    <div class="card-title">GET &nbsp;/</div>
+    <div class="card-desc">Welcome message. In vulnerable mode also returns a secret hint.</div>
+    <div class="row"><button onclick="call('GET','/')">Send</button></div>
+    <pre id="out-root">—</pre>
+  </div>
+
+  <!-- POST /login -->
+  <div class="card">
+    <div class="card-title">POST &nbsp;/login {LOGIN_TAG}</div>
+    <div class="card-desc">Login with username and password.</div>
+    <div class="row">
+      <div><label>Username</label><input id="login-user" value="admin"/></div>
+      <div><label>Password</label><input id="login-pass" type="password" value=""/></div>
+      <button onclick="login()">Send</button>
+    </div>
+    <pre id="out-login">—</pre>
+  </div>
+
+  <!-- GET /users/{id} -->
+  <div class="card">
+    <div class="card-title">GET &nbsp;/users/&#123;user_id&#125; {SQLI_TAG}</div>
+    <div class="card-desc">Fetch a user by ID.</div>
+    <div class="row">
+      <div><label>user_id</label><input id="uid" value="1"/></div>
+      <button onclick="call('GET','/users/'+document.getElementById('uid').value)">Send</button>
+    </div>
+    <pre id="out-user">—</pre>
+  </div>
+
+  <!-- GET /search -->
+  <div class="card">
+    <div class="card-title">GET &nbsp;/search {SQLI_TAG}</div>
+    <div class="card-desc">Search users by name.</div>
+    <div class="row">
+      <div><label>q</label><input id="sq" value="alice"/></div>
+      <button onclick="call('GET','/search?q='+encodeURIComponent(document.getElementById('sq').value))">Send</button>
+    </div>
+    <pre id="out-search">—</pre>
+  </div>
+
+  <!-- GET /ping -->
+  <div class="card">
+    <div class="card-title">GET &nbsp;/ping {PING_TAG}</div>
+    <div class="card-desc">Ping a host.</div>
+    <div class="row">
+      <div><label>host</label><input id="ph" value="127.0.0.1"/></div>
+      <button onclick="call('GET','/ping?host='+encodeURIComponent(document.getElementById('ph').value))">Send</button>
+    </div>
+    <pre id="out-ping">—</pre>
+  </div>
+
+  <footer>DevSecOps Demo &mdash; For educational use only. Do not deploy vulnerable mode to production.</footer>
+</main>
+
+<script>
+const outMap = {
+  '/': 'out-root',
+  '/login': 'out-login',
+  '/search': 'out-search',
+  '/ping': 'out-ping',
+};
+
+function getOutId(path) {
+  if (path.startsWith('/users/')) return 'out-user';
+  if (path.startsWith('/search')) return 'out-search';
+  if (path.startsWith('/ping')) return 'out-ping';
+  return outMap[path] || 'out-root';
+}
+
+async function call(method, path, body) {
+  const el = document.getElementById(getOutId(path));
+  el.textContent = 'Loading...';
+  el.className = '';
+  try {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(path, opts);
+    const data = await r.json();
+    el.textContent = JSON.stringify(data, null, 2);
+    el.className = r.ok ? 'ok' : 'err';
+  } catch(e) {
+    el.textContent = 'Error: ' + e.message;
+    el.className = 'err';
+  }
+}
+
+async function login() {
+  const u = document.getElementById('login-user').value;
+  const p = document.getElementById('login-pass').value;
+  const el = document.getElementById('out-login');
+  el.textContent = 'Loading...';
+  el.className = '';
+  try {
+    const r = await fetch('/login?username=' + encodeURIComponent(u) + '&password=' + encodeURIComponent(p), { method: 'POST' });
+    const data = await r.json();
+    el.textContent = JSON.stringify(data, null, 2);
+    el.className = r.ok ? 'ok' : 'err';
+  } catch(e) {
+    el.textContent = 'Error: ' + e.message;
+    el.className = 'err';
+  }
+}
+</script>
+</body>
+</html>"""
+
+
+def _build_frontend(secure: bool) -> str:
+    if secure:
+        badge_class = "badge-secure"
+        mode_label = "SECURE MODE"
+        info_class = "secure"
+        info_msg = "Running in <strong>Secure Mode</strong>. All routes use parameterised queries, env-based secrets, input validation, and localhost-only binding."
+        login_tag = '<span class="secure-tag">Env secret</span>'
+        sqli_tag = '<span class="secure-tag">Parameterised</span>'
+        ping_tag = '<span class="secure-tag">Validated</span>'
+    else:
+        badge_class = "badge-vuln"
+        mode_label = "VULNERABLE MODE"
+        info_class = ""
+        info_msg = "&#9888; Running in <strong>Vulnerable Mode</strong>. This app contains intentional security flaws for demonstration. Never deploy this to production."
+        login_tag = '<span class="cwe-tag">CWE-798</span>'
+        sqli_tag = '<span class="cwe-tag">CWE-89</span>'
+        ping_tag = '<span class="cwe-tag">CWE-78</span>'
+
+    return (
+        _FRONTEND_HTML
+        .replace("{BADGE_CLASS}", badge_class)
+        .replace("{MODE_LABEL}", mode_label)
+        .replace("{INFO_CLASS}", info_class)
+        .replace("{INFO_MSG}", info_msg)
+        .replace("{LOGIN_TAG}", login_tag)
+        .replace("{SQLI_TAG}", sqli_tag)
+        .replace("{PING_TAG}", ping_tag)
+    )
+
+
 def create_app() -> "FastAPI":  # type: ignore[name-defined]
     if not FASTAPI_AVAILABLE:
         raise RuntimeError("fastapi is not installed. Run: pip install fastapi uvicorn")
@@ -83,8 +270,12 @@ def _register_vulnerable_routes(app: "FastAPI") -> None:  # type: ignore[name-de
     # CWE-798: Hardcoded secret key
     SECRET_KEY = "super_secret_hardcoded_key_12345"  # noqa: S105  # CWE-798
 
-    @app.get("/")
-    def index() -> dict[str, str]:
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> HTMLResponse:
+        return HTMLResponse(_build_frontend(secure=False))
+
+    @app.get("/api/info")
+    def info() -> dict[str, str]:
         return {"message": "Welcome to the Vulnerable Demo App", "secret_hint": SECRET_KEY[:4]}
 
     @app.post("/login")
@@ -135,8 +326,12 @@ def _register_secure_routes(app: "FastAPI") -> None:  # type: ignore[name-define
     # Secrets loaded from environment variables – no hardcoded value
     secret_key = os.environ.get("APP_SECRET_KEY", "")
 
-    @app.get("/")
-    def index() -> dict[str, str]:
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> HTMLResponse:
+        return HTMLResponse(_build_frontend(secure=True))
+
+    @app.get("/api/info")
+    def info() -> dict[str, str]:
         return {"message": "Welcome to the Secure Demo App"}
 
     @app.post("/login")
